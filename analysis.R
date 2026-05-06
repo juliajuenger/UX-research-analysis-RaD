@@ -1,0 +1,502 @@
+## ----setup, include=FALSE-----------------------------------------------
+
+radreplies <- read.csv("radreplies.csv",sep = ";")
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+install.packages(c("ggplot2", "dplyr", "tidyr","stringr"))
+
+library(stringr)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+
+
+## -----------------------------------------------------------------------
+
+#### descriptive stats
+
+
+summary(radreplies)
+
+
+##### plots
+
+# Select columns 6–9 and reshape to long format
+rad_long <- radreplies %>%
+  select(6:9) %>%
+  pivot_longer(cols = everything(),
+               names_to = "Question",
+               values_to = "Response") %>%
+  mutate(
+    Response = factor(Response, levels = 1:7),
+    Question = recode(Question,
+      natureconnection = "I feel emotionally connected to nature",
+      calmandaware     = "Nature makes me feel calm and grounded",
+      Noticesurroundings   = "I notice small details in natural environments",
+      Belonging        = "I feel a sense of Belonging in nature"
+    )
+  )
+
+# Plot combined bar plot
+ggplot(rad_long, aes(x = Response, fill = Question)) +
+  geom_bar(position = "dodge") +
+  theme_minimal() +
+  labs(title = "Distribution of Nature Connection Responses",
+       x = "Strongly disagree (1) – Strongly Agree (7)",
+       y = "Count")
+
+
+
+rad_long_2 <- radreplies %>%
+  select(11:14) %>%
+  pivot_longer(cols = everything(),
+               names_to = "Question",
+               values_to = "Response") %>%
+  mutate(Response = factor(Response, levels = 1:7))
+
+
+ggplot(rad_long_2, aes(x = Response, fill = Question)) +
+  geom_bar(position = "dodge") +
+  theme_minimal() +
+  labs(title = "Distribution of Responses (Columns 11–14)",
+       x = "Response (1–7)",
+       y = "Count") +
+  scale_fill_brewer(palette = "Set2")
+
+
+
+#### summary columns
+
+radreplies[6:9]
+
+rad_clean <- radreplies %>%
+  mutate(
+    # Nature connection (average of cols 6–9)
+    nature_connection = rowMeans(select(., 6:9), na.rm = TRUE),
+
+    # Recode column 10 (text → numeric)
+    nature_exposure = recode(Naturepresent,
+      "Constantly surrounded by natural elements" = 5,
+      "Frequently present" = 4,
+      "Occasionally present" = 3,
+      "Rarely present" = 2,
+      "Almost never present" = 1
+    ),
+    
+    nature_intentionaltime = recode(Naturetime,
+      "Daily" = 5,
+      "3–5 times per week" = 4,
+      "1–2 times per week" = 3,
+      "A few times per month" = 2,
+      "Rarely" = 1,
+      "Never" =0
+    ),
+
+
+
+    # Reverse-score cols 13–14 (Likert 1–7 to 7–1)
+    busydistracted_rev = 8 - .[[13]],
+    Hardstaypres_rev = 8 - .[[14]],
+
+    # Well-being score (average of 11–14, with reversed items)
+    wellbeing = rowMeans(
+      cbind(.[[11]], .[[12]], busydistracted_rev, Hardstaypres_rev),
+      na.rm = TRUE
+    )
+  )
+
+
+
+### nature exposure (total_naturetime) column
+
+rad_clean <- rad_clean %>%
+  mutate(
+    total_naturetime = nature_exposure + nature_intentionaltime
+  )
+
+
+
+rad_clean$total_naturetime <- rad_clean$total_naturetime/2
+
+
+##################### correlation tests ##############
+
+cor.test(rad_clean$nature_connection,
+         rad_clean$wellbeing,
+         use = "complete.obs",
+         method = "spearman")
+
+cor.test(rad_clean$total_naturetime,
+         rad_clean$nature_connection,
+         use = "complete.obs",
+         method = "spearman")
+
+cor.test(rad_clean$total_naturetime,
+         rad_clean$wellbeing,
+         use = "complete.obs",
+         method = "spearman")
+
+
+##### remove outlier
+
+
+rad_clean_nolow <- rad_clean %>%
+  filter(nature_connection != 1.50)
+
+cor.test(rad_clean_nolow$nature_connection,
+         rad_clean_nolow$wellbeing,
+         use = "complete.obs",
+         method = "spearman")
+
+
+
+##### plot
+
+ggplot(rad_clean, aes(x = total_naturetime, y = nature_connection)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  theme_minimal() +
+  labs(
+    title = "Total Nature Time vs Nature Connection",
+    x = "Total Nature Time",
+    y = "Nature Connection (mean score)"
+  )
+
+#### descriptives
+
+mean(rad_clean$nature_connection)
+sd(rad_clean$nature_connection)
+mean(rad_clean$total_naturetime)
+sd(rad_clean$total_naturetime)
+mean(rad_clean$wellbeing)
+sd(rad_clean$wellbeing)
+
+
+
+ggplot(rad_clean, aes(x = total_naturetime, y = wellbeing)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  labs(title = "Total Nature Time vs Well-being",
+       x = "Total Nature Time",
+       y = "Well-being")
+
+
+
+
+
+
+## -----------------------------------------------------------------------
+
+##### VR comfort plot
+
+
+# Select columns 6–9 and reshape to long format
+rad_long_VR <- radreplies %>%
+  select(15:18) %>%
+  pivot_longer(cols = everything(),
+               names_to = "Question",
+               values_to = "Response") %>%
+  mutate(
+    Question = trimws(Question),  
+    Response = factor(Response, levels = 1:7),
+    Question = recode(Question,
+      Guidedmed = "Guided meditative experiences",
+      Nonhumanbody = "Experiencing your body as non-human",
+      Nonhuman. = "Seeing the world from a non-human perspective",
+      slowlystill = "Moving slowly or remaining still for extended periods"
+    )
+  )
+
+
+ggplot(rad_long_VR, aes(x = Question, y = as.numeric(Response), fill = Question)) +
+  stat_summary(fun = mean, geom = "bar", width = 0.7) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2) +
+  
+  scale_fill_brewer(palette = "Set3") +
+  
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 25)) +
+  
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5),
+    plot.margin = margin(10, 20, 10, 10)
+  ) +
+  
+  labs(
+    title = "Mean Comfort Ratings for VR Experiences",
+    x = NULL,
+    y = "Mean rating (1–7)"
+  )
+
+
+## -----------------------------------------------------------------------
+
+########## VR expectations by connection/exposure means
+
+rad_clean$Hopegain <- as.factor(rad_clean$Hopegain)
+
+#### remove free-typed responses
+
+rad_clean_noVR <- rad_clean %>%
+  mutate(Hopegain = as.character(Hopegain)) %>%
+  separate_rows(Hopegain, sep = ",\\s*") %>%
+  mutate(Hopegain = trimws(Hopegain)) %>%
+  filter(!Hopegain %in% c(
+    "Tror jeg ville være negativt stillet til ideen", "hvis tanken var at det skulle efterligne natur",
+    "Some kind of narrative", "e.g. what kind of forest I'm in or species of tree I embody."
+  ))
+
+ggplot(rad_clean_noVR, aes(x = Hopegain, y = nature_connection)) +
+  stat_summary(fun = mean, geom = "bar", fill = "steelblue") +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2) +
+  theme_minimal() +
+  labs(
+    title = "VR Expectations by Nature Connection",
+    x = "Expected Outcome (VR)",
+    y = "Nature Connection (mean)"
+  ) +
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+
+ggplot(rad_clean_noVR, aes(x = Hopegain, y = total_naturetime)) +
+  stat_summary(fun = mean, geom = "bar", fill = "darkseagreen") +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2) +
+  theme_minimal() +
+  labs(
+    title = "VR Expectations by Nature Exposure",
+    x = "Expected Outcome (VR)",
+    y = "Total Nature Time"
+  ) +
+  theme(axis.text.x = element_text(angle = 25, hjust = 1))
+
+################## stats of VR expectations by connection/exposure/wellbeing
+
+rad_clean_noVR %>%
+  group_by(Hopegain) %>%
+  summarise(
+    mean_nature_connection = mean(nature_connection, na.rm = TRUE),
+    n = n()
+  ) %>%
+  arrange(desc(mean_nature_connection))
+
+rad_clean_noVR %>%
+  group_by(Hopegain) %>%
+  summarise(
+    mean_total_naturetime = mean(total_naturetime, na.rm = TRUE),
+    n = n()
+  ) %>%
+  arrange(desc(mean_total_naturetime))
+
+rad_clean_noVR %>%
+  group_by(Hopegain) %>%
+  summarise(
+    mean_well_being = mean(wellbeing, na.rm = TRUE),
+    n = n()
+  ) %>%
+  arrange(desc(mean_well_being))
+
+
+      
+##### high vs low nature exposure → differences in VR comfort/motivation.
+
+rad_clean <- rad_clean %>%
+  mutate(,
+    slowlystill   = as.numeric(slowlystill),
+    Nonhumanbody   = as.numeric(Nonhumanbody),
+    Guidedmed    = as.numeric(Guidedmed),
+     mean_Nonhuman. = as.numeric(Nonhuman.)
+    
+  )
+
+rad_clean <- rad_clean %>%
+  mutate(
+    exposure_group = ifelse(
+      total_naturetime >= median(total_naturetime, na.rm = TRUE),
+      "High exposure", "Low exposure"
+    )
+  )
+
+vr_exposure_comparison <- rad_clean %>%
+  group_by(exposure_group) %>%
+  summarise(
+    n = n(),
+    mean_Nonhuman. = mean(Nonhuman.),
+    mean_slowlystill   = mean(slowlystill, na.rm = TRUE),
+    mean_Nonhumanbody   = mean(Nonhumanbody, na.rm = TRUE),
+    mean_Guidedmed    = mean(Guidedmed, na.rm = TRUE)
+  )
+
+vr_exposure_comparison
+
+
+##### high vs low nature connection → differences in VR comfort/motivation.
+
+rad_clean <- rad_clean %>%
+  mutate(
+    connection_group = ifelse(
+      nature_connection >= median(nature_connection, na.rm = TRUE),
+      "High connection", "Low connection"
+    )
+  )
+
+vr_connection_comparison_conn <- rad_clean %>%
+  group_by(connection_group) %>%
+  summarise(
+    n = n(),
+    mean_Nonhuman. = mean(Nonhuman.),
+    mean_slowlystill   = mean(slowlystill, na.rm = TRUE),
+    mean_Nonhumanbody   = mean(Nonhumanbody, na.rm = TRUE),
+    mean_Guidedmed    = mean(Guidedmed, na.rm = TRUE)
+  )
+
+vr_connection_comparison_conn
+
+
+
+##### high vs low wellbeing → differences in VR comfort/motivation.
+
+
+rad_clean <- rad_clean %>%
+  mutate(
+    connection_group = ifelse(
+      wellbeing >= median(wellbeing, na.rm = TRUE),
+      "High wellbeing", "Low wellbeing"
+    )
+  )
+
+vr_wellbeing_comparison <- rad_clean %>%
+  group_by(connection_group) %>%
+  summarise(
+    n = n(),
+    mean_Nonhuman. = mean(Nonhuman.),
+    mean_slowlystill   = mean(slowlystill, na.rm = TRUE),
+    mean_Nonhumanbody   = mean(Nonhumanbody, na.rm = TRUE),
+    mean_Guidedmed    = mean(Guidedmed, na.rm = TRUE)
+  )
+
+vr_wellbeing_comparison
+
+
+
+##### nature activities by group
+
+
+low_exposure_activities <- rad_clean %>%
+  filter(exposure_group == "Low exposure") %>%
+  mutate(natureactivity = as.character(natureactivity)) %>%
+  separate_rows(natureactivity, sep = ",\\s*") %>%
+  mutate(natureactivity = trimws(natureactivity))
+
+activity_counts_low <- low_exposure_activities %>%
+  count(natureactivity, sort = TRUE)
+
+activity_counts_low <- low_exposure_activities %>%
+  count(natureactivity) %>%
+  mutate(
+    percent = n / sum(n) * 100
+  ) %>%
+  arrange(desc(n))
+
+high_exposure_activities <- rad_clean %>%
+  filter(exposure_group == "High exposure") %>%
+  mutate(natureactivity = as.character(natureactivity)) %>%
+  separate_rows(natureactivity, sep = ",\\s*") %>%
+  mutate(natureactivity = trimws(natureactivity))
+
+activity_counts_high <- high_exposure_activities %>%
+  count(natureactivity, sort = TRUE)
+
+activity_counts_low <- low_exposure_activities %>%
+  count(natureactivity) %>%
+  mutate(
+    percent = n / sum(n) * 100
+  ) %>%
+  arrange(desc(n))
+
+
+combined_activities <- bind_rows(
+  low_exposure_activities %>% mutate(group = "Low"),
+  high_exposure_activities %>% mutate(group = "High")
+)
+
+# count activities by group
+activity_group_counts <- combined_activities %>%
+  count(group, natureactivity)
+
+# convert to wide format
+table_activity_wide <- activity_group_counts %>%
+  pivot_wider(names_from = group, values_from = n, values_fill = list(n=0))
+
+# convert to matrix and set row names
+row_names <- table_activity_wide$natureactivity
+table_matrix <- as.matrix(table_activity_wide[ , -1])  
+
+rownames(table_matrix) <- row_names
+
+
+fisher.test(table_matrix)
+
+
+
+#### Plot for relative levels of connection/exposure/well being ###
+
+#scale
+
+
+summary_stats <- data.frame(
+  Variable = c("Nature connection", "Nature exposure", "Well-being"),
+  
+  Mean = c(
+    mean(rad_clean$nature_connection, na.rm = TRUE),
+    mean(rad_clean$total_naturetime, na.rm = TRUE),
+    mean(rad_clean$wellbeing, na.rm = TRUE)
+  ),
+  
+  SD = c(
+    sd(rad_clean$nature_connection, na.rm = TRUE),
+    sd(rad_clean$total_naturetime, na.rm = TRUE),
+    sd(rad_clean$wellbeing, na.rm = TRUE)
+  ),
+  
+  min_scale = c(1, 1, 1),
+  max_scale = c(7, 5, 7)
+)
+
+# Scale means and SDs to 0–1
+summary_stats$Mean_scaled <- 
+  (summary_stats$Mean - summary_stats$min_scale) /
+  (summary_stats$max_scale - summary_stats$min_scale)
+
+summary_stats$SD_scaled <- 
+  summary_stats$SD / 
+  (summary_stats$max_scale - summary_stats$min_scale)
+
+
+
+# plot 
+
+ggplot(summary_stats, aes(x = Variable, y = Mean_scaled, fill = Variable)) +
+  geom_bar(stat = "identity", width = 0.6) +
+  
+  geom_errorbar(
+    aes(
+      ymin = Mean_scaled - SD_scaled,
+      ymax = Mean_scaled + SD_scaled
+    ),
+    width = 0.2
+  ) +
+  
+  scale_fill_brewer(palette = "Set2") +
+  
+  theme_minimal() +
+  theme(legend.position = "none") +
+  
+  labs(
+    title = "Relative Levels of Nature Connection, Exposure, and Well-being",
+    x = NULL,
+    y = "Scaled score (0–1)"
+  )
+
+knitr::purl("RaD.Rmd", output = "analysis.R")
+
